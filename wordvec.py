@@ -14,7 +14,6 @@ class WordVec:
     VECTOR_SIZE = 128
     MIN_COUNT = 2
     EPOCHS = 1000
-
     def __init__(
         self,
         data_provider: DataProvider,

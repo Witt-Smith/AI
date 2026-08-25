@@ -128,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--dataset-name", default="silver/lccc")
-    parser.add_argument("--dataset-config", default=None)
+    parser.add_argument("--dataset-config", default="base")
     parser.add_argument("--dialog-field", default="dialog")
     parser.add_argument("--max-dialogs", type=int, default=10_000)
     parser.add_argument("--max-sequence-length", type=int, default=64)
