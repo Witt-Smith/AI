@@ -1,40 +1,37 @@
+"""Read dialogue data and form batches without depending on training code."""
+from __future__ import annotations
+
 import json
-from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from datasets import DatasetDict, load_dataset
+import torch
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
+
+if TYPE_CHECKING:
+    from datasets import DatasetDict
+    from .tokenizer import Tokenizer
 from jieba import cut
 
 
 DEFAULT_DIALOG_FIELD = "dialog"
-DEFAULT_LCCC_CONFIG = "base"
 LOCAL_SPLITS = frozenset({"train", "validation", "test", "unknown"})
 
 
-class LoadingMethod(Enum):
-    PATH = "path"
-    URL = "url"
-
-
-class DataProvider:
+class DataSource:
     """Load LCCC dialogs or a local finite-domain chat dataset."""
 
     def __init__(
         self,
         dataset: str,
-        loading_method: LoadingMethod,
         max_dialogs: int = 10_000,
         dataset_config: Optional[str] = None,
         dialog_field: str = DEFAULT_DIALOG_FIELD,
     ):
         if not isinstance(dataset, str) or not dataset.strip():
             raise ValueError("dataset must be a non-empty string")
-        if not isinstance(loading_method, LoadingMethod):
-            raise TypeError("loading_method must be a LoadingMethod value")
-        if loading_method != LoadingMethod.PATH:
-            raise NotImplementedError("Only PATH loading is implemented")
         if max_dialogs <= 0:
             raise ValueError("max_dialogs must be greater than 0")
         if dataset_config is not None:
@@ -47,7 +44,6 @@ class DataProvider:
         self.dataset_config = dataset_config
         self.dialog_field = dialog_field
         self._ds: Optional[DatasetDict] = None
-        self.loading_method = loading_method
         self.max_dialogs = max_dialogs
         self.dataset_path = self._resolve_dataset_path(self.dataset)
 
@@ -59,7 +55,6 @@ class DataProvider:
         if not candidate.is_absolute():
             candidates = [
                 Path.cwd() / candidate,
-                Path(__file__).resolve().parent / candidate,
             ]
 
         for path in candidates:
@@ -90,6 +85,9 @@ class DataProvider:
                 "Use get_records() or get_pairs() instead."
             )
         if self._ds is None:
+            # Remote dependencies and network access are only needed here.
+            from datasets import DatasetDict, load_dataset
+
             if self.dataset_config is None:
                 loaded_dataset = load_dataset(self.dataset)
             else:
@@ -316,9 +314,43 @@ class DataProvider:
             for turn in dialog
         ]
 
-    def get_ds(self) -> DatasetDict:
-        return self.ds
 
-    @lru_cache(maxsize=1)
-    def dataset_load(self) -> DatasetDict:
-        return self.ds
+class TrainingDataset(Dataset):
+    """Pre-encode every training pair once and batch the cached tensors."""
+
+    def __init__(self, pairs: list[tuple[str, str]], tokenizer: Tokenizer):
+        self.pad_id = tokenizer.pad_id
+        self.examples = [
+            (
+                torch.tensor(tokenizer.get_ids(question), dtype=torch.long),
+                torch.tensor(tokenizer.get_ids(answer), dtype=torch.long),
+            )
+            for question, answer in pairs
+        ]
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.examples[index]
+
+    def collate_fn(
+        self,
+        batch: list[tuple[torch.Tensor, torch.Tensor]],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        question_ids, answer_ids = zip(*batch)
+        padded_question_ids = pad_sequence(
+            question_ids,
+            batch_first=True,
+            padding_value=self.pad_id,
+        )
+        padded_answer_ids = pad_sequence(
+            answer_ids,
+            batch_first=True,
+            padding_value=self.pad_id,
+        )
+        question_lengths = torch.tensor(
+            [len(ids) for ids in question_ids],
+            dtype=torch.long,
+        )
+        return padded_question_ids, padded_answer_ids, question_lengths
+
+    def __len__(self) -> int:
+        return len(self.examples)

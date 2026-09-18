@@ -1,4 +1,5 @@
 {
     "python.analysis.autoImportCompletions": true,
-    "python.analysis.languageServerMode": "default"
+    "python.analysis.languageServerMode": "default",
+    "git.ignoreLimitWarning": true
 }

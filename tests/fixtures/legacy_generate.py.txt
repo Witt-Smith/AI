@@ -1,0 +1,48 @@
+def generate(
+    self,
+    question: str,
+    max_new_tokens: int = 50,
+) -> torch.Tensor:
+    """Generate one response, feeding each predicted token back to the GRU."""
+    if not question.strip():
+        raise ValueError("question cannot be empty")
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be greater than 0")
+
+    bos_id = self.tokenizer.bos_id
+    eos_id = self.tokenizer.eos_id
+    model_device = next(self.parameters()).device
+    question_ids = torch.tensor(
+        self.tokenizer.get_ids(question),
+        dtype=torch.long,
+        device=model_device,
+    ).unsqueeze(0)
+
+    current_id = torch.full(
+        (1, 1),
+        fill_value=bos_id,
+        dtype=torch.long,
+        device=model_device,
+    )
+    generated_ids = current_id
+
+    with torch.inference_mode():
+        question_embedding = self.embedding(question_ids)
+        _, decoder_hidden = self.encoder(question_embedding)
+
+        for _ in range(max_new_tokens):
+            decoder_embedding = self.embedding(current_id)
+            decoder_output, decoder_hidden = self.decoder(
+                decoder_embedding,
+                decoder_hidden,
+            )
+            next_id = self.linear(decoder_output[:, -1, :]).argmax(
+                dim=-1,
+                keepdim=True,
+            )
+            generated_ids = torch.cat([generated_ids, next_id], dim=1)
+            if next_id.item() == eos_id:
+                break
+            current_id = next_id
+
+    return generated_ids

@@ -1,0 +1,18 @@
+flowchart TD
+    chatCommand["chat 命令"] --> loadArtifacts["检查 checkpoint 与配套产物"]
+    loadArtifacts --> loadTokenizer["加载 Word2Vec 与只读词表"]
+    loadTokenizer --> loadWeights["构造 Train 并严格加载权重"]
+    loadWeights --> questionInput["输入问题"]
+    questionInput --> encodeQuestion["get_ids：分词与 BOS/EOS"]
+    encodeQuestion --> encodeOnce["Encoder 编码问题一次"]
+    encodeOnce --> initialToken["当前 token 设为 BOS"]
+    initialToken --> decoderStep["Decoder 接收 token 与 hidden"]
+    decoderStep --> projectLogits["Linear 产生词表 logits"]
+    projectLogits --> greedyChoice["argmax 选择下一个 ID"]
+    greedyChoice --> appendToken["追加 ID 并保留新 hidden"]
+    appendToken --> shouldStop{"EOS 或达到生成上限？"}
+    shouldStop -->|"否"| decoderStep
+    shouldStop -->|"是"| decodeText["decode：还原文本"]
+    decodeText --> displayAnswer["输出回答"]
+    style encodeOnce fill:#C2E5FF,stroke:#3DADFF
+    style decoderStep fill:#FFE0C2,stroke:#FF9E42

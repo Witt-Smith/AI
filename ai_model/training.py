@@ -1,10 +1,11 @@
+"""The original training computation, moved without changing the Train class."""
+
 import lightning as L
 import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
-from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pack_padded_sequence
 
-from tokenizer import Tokenizer
+from .tokenizer import Tokenizer
 
 
 class Train(L.LightningModule):
@@ -88,7 +89,7 @@ class Train(L.LightningModule):
             logits.reshape(-1, logits.size(-1)),
             labels.reshape(-1),
         )
-        learning_rate = self.optimizers().param_groups[0]["lr"]
+        learning_rate = self.optimizers().param_groups[0]["lr"] # type: ignore
 
         self.log_dict(
             {
@@ -108,46 +109,3 @@ class Train(L.LightningModule):
             params=self.parameters(),
             lr=self.learning_rate,
         )
-    
-
-
-
-class TrainingDataset(Dataset):
-    """Pre-encode every training pair once and batch the cached tensors."""
-
-    def __init__(self, tokenizer: Tokenizer):
-        self.pad_id = tokenizer.pad_id
-        self.examples = [
-            (
-                torch.tensor(tokenizer.get_ids(question), dtype=torch.long),
-                torch.tensor(tokenizer.get_ids(answer), dtype=torch.long),
-            )
-            for question, answer in tokenizer.data_provider.get_pairs()
-        ]
-
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.examples[index]
-
-    def collate_fn(
-        self,
-        batch: list[tuple[torch.Tensor, torch.Tensor]],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        question_ids, answer_ids = zip(*batch)
-        padded_question_ids = pad_sequence(
-            question_ids,
-            batch_first=True,
-            padding_value=self.pad_id,
-        )
-        padded_answer_ids = pad_sequence(
-            answer_ids,
-            batch_first=True,
-            padding_value=self.pad_id,
-        )
-        question_lengths = torch.tensor(
-            [len(ids) for ids in question_ids],
-            dtype=torch.long,
-        )
-        return padded_question_ids, padded_answer_ids, question_lengths
-
-    def __len__(self) -> int:
-        return len(self.examples)

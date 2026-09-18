@@ -1,76 +1,93 @@
 # AI-MODEL
 
-## 云端训练
+这是一个用于学习中文 Encoder–Decoder GRU 的小型 PyTorch Lightning 项目。当前结构把数据、分词、Word2Vec、训练、恢复和聊天分开，同时保留原来的网络、损失、Adam 和贪心生成算法。
 
-安装依赖：
+## 安装
+
+Python 3.9 环境中执行：
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-有限训练：
+在项目根目录查看命令：
 
 ```bash
-python train_cloud.py --output-dir /persistent/ai-model --max-epochs 1000
+python -m ai_model train --help
+python -m ai_model chat --help
 ```
 
-默认数据集是 Hugging Face `silver/lccc` 的 `base` 配置，读取字段为 `dialog`。
-如果数据集结构不同，需要明确指定，例如：
+## 云端首次训练
+
+复制并修改 `configs/cloud.yaml`，特别是持久化 `output_dir`、数据规模和硬件参数：
 
 ```bash
-python train_cloud.py --dataset-name owner/dataset --dataset-config default --dialog-field messages
+python -m ai_model train --config configs/cloud.yaml
 ```
 
-也可以把 `--dataset-name` 指向本地 JSON。训练记录只要求 `question` 和
-`answer`；`intent`、`record_id`、`answer_id` 是可选元数据，不会自动变成模型的
-意图路由能力：
-
-```json
-{
-  "train": [
-    {"question": "你好", "answer": "你好，有什么可以帮你？"}
-  ],
-  "validation": [],
-  "test": [],
-  "unknown": ["一个训练域外的问题"]
-}
-```
-
-持续训练：
+命令行中明确给出的参数覆盖 YAML，例如：
 
 ```bash
-python train_cloud.py --output-dir /persistent/ai-model --continuous
+python -m ai_model train \
+  --config configs/cloud.yaml \
+  --output-dir /persistent/ai-model/experiment-002 \
+  --batch-size 32 \
+  --num-workers 8 \
+  --accelerator gpu \
+  --devices 1
 ```
 
-`/persistent/ai-model` 必须替换为云平台的持久化目录。训练会每个 epoch 更新
-`checkpoints/last.ckpt`；同一条命令重新启动时会自动恢复模型、优化器、epoch 和
-global step。首次运行还会在 `artifacts/` 保存与检查点绑定的词表和 Word2Vec；
-后续启动直接加载，不会重新训练 Word2Vec。`--no-resume` 只重新初始化网络权重，
-仍会复用同一输出目录里的词表和 Word2Vec；更换数据集时必须使用新的输出目录，
-否则词表与数据会失去对应关系。
-
-可用 `--max-time 00:12:00:00` 限制单次任务最多运行 12 小时。有限训练中的
-`--max-epochs` 是总 epoch 目标，不是每次重启后额外增加的 epoch 数。
-
-## 本地聊天
+默认数据是 Hugging Face `silver/lccc` 的 `base` 配置，读取 `dialog` 字段。使用本地 JSON 时：
 
 ```bash
-python chat.py --output-dir /persistent/ai-model
+python -m ai_model train \
+  --dataset-name examples/dialogues.json \
+  --output-dir runs/local-demo \
+  --max-epochs 1
 ```
 
-输入 `exit`、`quit` 或 `退出` 结束聊天。训练任务不会进入交互输入。
-可用 `--device cpu` 固定运行设备、`--max-new-tokens 50` 控制最长生成长度，
-以及 `--typing-delay 0` 关闭逐字输出延迟。
+一个输出目录对应一套实验，其中包含：
 
-## 离线检查
+```text
+artifacts/vocabulary.json
+artifacts/word2vec.model
+checkpoints/last.ckpt
+logs/
+manifest.json
+records/
+```
+
+## 断点续训
+
+再次使用同一输出目录时，程序优先恢复 `last.ckpt`；`max_epochs` 是累计目标轮数：
+
+```bash
+python -m ai_model train \
+  --config configs/cloud.yaml \
+  --output-dir /persistent/ai-model/experiment-001 \
+  --max-epochs 1200
+```
+
+也可以用 `--resume-from /path/to/file.ckpt` 显式选择文件。选中的文件损坏或不兼容时会直接报错，不会换用另一个 checkpoint。
+
+`--no-resume` 用于新网络权重，并拒绝任何已经包含 checkpoint 的目标目录。新实验请选择新的 `output_dir`；它不会删除旧模型。
+
+## 聊天
+
+```bash
+python -m ai_model chat \
+  --output-dir /persistent/ai-model/experiment-001 \
+  --device cpu
+```
+
+输入 `exit`、`quit` 或 `退出` 结束。聊天只读取 checkpoint、词表和 Word2Vec，不访问训练数据，也不会补造缺失产物。
+
+## 验证
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-这组测试不会下载远程数据，覆盖本地/远程数据字段、固定特殊 token、EOS 停止、
-单次编码问题和 `last.ckpt` 恢复优先级。根目录的 `test.py` 是个人试验文件，
-不会被这条命令收集。
+测试包括训练核心等价、数据契约、配置与检查点，以及真实 CPU 小数据保存、续训和聊天加载。测试通过证明流程与原计算语义成立；它不证明回答质量，也不等于完成云端 GPU 长训练。
 
-训练指标位于 `logs/train/version_*/metrics.csv`，可用 `Log(metrics_path)` 的
-`show_dataframe()` 查看，或用 `show_plot()` 绘制 `normal_loss` 和 `lr`。
+详细调用图、张量形状和架构概念见 [架构与源码阅读手册](docs/architecture-guide.md)，并可直接打开 `docs/architecture-guide.html`。如需重新生成 HTML 和静态导图，先安装 `requirements-docs.txt`，再执行 `python docs/build_guide.py`。

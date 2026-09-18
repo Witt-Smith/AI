@@ -1,0 +1,18 @@
+{
+  "train": [
+    {
+      "question": "你好",
+      "answer": "你好，有什么可以帮你？"
+    },
+    {
+      "question": "你是谁？",
+      "answer": "我是你正在训练的对话模型。"
+    }
+  ],
+  "validation": [],
+  "test": [],
+  "unknown": [
+    "一个训练域外的问题"
+  ]
+}
+

@@ -1,0 +1,21 @@
+flowchart TD
+    trainCommand["train 命令"] --> mergeConfig["合并 YAML 与显式参数"]
+    mergeConfig --> resolveRun["确定输出路径与运行方式"]
+    resolveRun --> seedRuntime["设置随机种子"]
+    seedRuntime --> loadPairs["DataSource：清洗并缓存问答"]
+    loadPairs --> prepareStore["EmbeddingStore.prepare"]
+    prepareStore --> wordArtifact[("word2vec.model")]
+    prepareStore --> prepareTokenizer["Tokenizer.prepare"]
+    prepareTokenizer --> vocabArtifact[("vocabulary.json")]
+    prepareTokenizer --> encodePairs["TrainingDataset：预编码"]
+    encodePairs --> batchLoader["DataLoader：取样与补齐"]
+    batchLoader --> createModel["Train：构造原网络"]
+    createModel --> fitTrainer["Trainer.fit"]
+    fitTrainer --> trainingStep["training_step：移位与损失"]
+    trainingStep --> forwardPass["Embedding → Encoder → Decoder → Linear"]
+    forwardPass --> optimizerStep["反向传播与 Adam 更新"]
+    optimizerStep --> fitTrainer
+    fitTrainer --> saveArtifacts[("checkpoint 与日志")]
+    style createModel fill:#FFE0C2,stroke:#FF9E42
+    style trainingStep fill:#FFE0C2,stroke:#FF9E42
+    style forwardPass fill:#FFE0C2,stroke:#FF9E42

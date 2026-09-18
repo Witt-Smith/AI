@@ -1,0 +1,17 @@
+flowchart TD
+    entryPoint["python -m ai_model"] --> cliModule["cli：解析命令"]
+    cliModule --> configModule["config：配置与路径"]
+    cliModule --> runtimeModule["runtime：组装并执行"]
+    runtimeModule --> configModule
+    runtimeModule --> dataModule["data：样本与批次"]
+    runtimeModule --> embeddingsModule["embeddings：词向量产物"]
+    runtimeModule --> tokenizerModule["tokenizer：文本与 ID"]
+    runtimeModule --> trainingModule["training：原训练核心"]
+    runtimeModule --> checkpointModule["checkpoints：产物与恢复检查"]
+    runtimeModule --> inferenceModule["inference：逐步生成"]
+    tokenizerModule --> embeddingsModule
+    trainingModule --> tokenizerModule
+    inferenceModule --> trainingModule
+    inferenceModule --> tokenizerModule
+    style trainingModule fill:#FFE0C2,stroke:#FF9E42
+    style runtimeModule fill:#C2E5FF,stroke:#3DADFF

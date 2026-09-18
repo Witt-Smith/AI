@@ -1,0 +1,20 @@
+flowchart TD
+    resumeCommand["train 命令"] --> resolveMode{"显式恢复路径？"}
+    resolveMode -->|"有"| explicitFile["检查指定 checkpoint"]
+    resolveMode -->|"无"| noResumeMode{"no-resume？"}
+    noResumeMode -->|"是"| freshWeights["复用兼容产物并新建权重"]
+    noResumeMode -->|"否"| findLast["优先 last.ckpt 再查最新文件"]
+    findLast --> checkpointFound{"找到 checkpoint？"}
+    checkpointFound -->|"否"| firstRun["进入首次训练"]
+    checkpointFound -->|"是"| checkArtifacts["检查词表与词向量"]
+    explicitFile --> checkArtifacts
+    checkArtifacts --> verifyCompatibility["检查元数据与权重结构"]
+    verifyCompatibility --> compatibleArtifacts{"兼容且完整？"}
+    compatibleArtifacts -->|"否"| stopRun["报错并保留现场"]
+    compatibleArtifacts -->|"是"| freezeVocabulary["加载产物且冻结词表"]
+    freezeVocabulary --> buildTraining["重建 Dataset 与 Train"]
+    buildTraining --> restoreTrainer["Trainer.fit 使用 ckpt_path"]
+    restoreTrainer --> restoreState["恢复权重、Adam、epoch 与 step"]
+    restoreState --> continueTraining["继续到累计目标 epoch"]
+    style stopRun fill:#FFCDC2,stroke:#FF7556
+    style restoreState fill:#CDF4D3,stroke:#66D575

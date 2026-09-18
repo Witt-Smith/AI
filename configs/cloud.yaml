@@ -1,0 +1,29 @@
+# 每个 output_dir 对应一套实验。云平台上请改成真正的持久化目录。
+output_dir: /persistent/ai-model/experiment-001
+
+data:
+  dataset_name: silver/lccc
+  dataset_config: base
+  dialog_field: dialog
+  max_dialogs: 10000
+  max_sequence_length: 64
+
+train:
+  batch_size: 512
+  num_workers: 128
+  max_epochs: 1000
+  learning_rate: 0.02
+  seed: 42
+  checkpoint_every_n_epochs: 10
+  log_every_n_steps: 100
+  gradient_clip_val: 1.0
+  accelerator: auto
+  devices: auto
+  precision: 32-true
+  max_time: null
+
+chat:
+  device: auto
+  max_new_tokens: 50
+  typing_delay: 0.05
+

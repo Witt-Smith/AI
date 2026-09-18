@@ -1,17 +1,17 @@
+"""Jieba segmentation and stable token IDs, composed with an embedding store."""
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Iterable, Optional, Union
+from typing import Iterable, Union
 
 import torch
 from jieba import cut
 
-from data_provider import DataProvider
-from wordvec import WordVec
-
-from config import PROJECT_OUTPUT_DIR
+from .embeddings import EmbeddingStore
 
 
-class Tokenizer(WordVec):
+class Tokenizer:
     """Segment text and keep token IDs aligned with training artifacts."""
 
     SPECIAL_TOKEN_IDS = {
@@ -23,23 +23,18 @@ class Tokenizer(WordVec):
 
     def __init__(
         self,
-        data_provider: DataProvider,
-        max_sequence_length: int,
-        vocabulary_path: Optional[Path] = None,
-        word2vec_path: Optional[Path] = None,
-        allow_vocabulary_updates: bool = True,
+        store: EmbeddingStore,
+        vocabulary: dict[str, int],
+        vocabulary_path: Path,
+        max_sequence_length: int = 64,
     ):
         if max_sequence_length < 3:
             raise ValueError("max_sequence_length must be at least 3")
-        super().__init__(data_provider, model_path=word2vec_path)
+        self.validate_vocabulary(vocabulary)
+        self.store = store
         self.max_sequence_length = max_sequence_length
-        self.vocabulary_path = (
-            vocabulary_path
-            if vocabulary_path is not None
-            else PROJECT_OUTPUT_DIR / "artifacts" / "vocabulary.json"
-        )
-        self.allow_vocabulary_updates = allow_vocabulary_updates
-        self.token_to_id = self._build_vocabulary()
+        self.vocabulary_path = Path(vocabulary_path)
+        self.token_to_id = dict(vocabulary)
         self.id_to_token = {
             token_id: token for token, token_id in self.token_to_id.items()
         }
@@ -49,47 +44,64 @@ class Tokenizer(WordVec):
         self.eos_id = self.SPECIAL_TOKEN_IDS["<EOS>"]
         self._ignored_decode_ids = frozenset({self.pad_id, self.bos_id})
 
+    @classmethod
+    def prepare(
+        cls,
+        store: EmbeddingStore,
+        vocabulary_path: Path,
+        max_sequence_length: int = 64,
+        allow_vocabulary_updates: bool = True,
+    ) -> Tokenizer:
+        """Create IDs once; an existing vocabulary is always reused unchanged."""
+        path = Path(vocabulary_path)
+        if path.exists() or not allow_vocabulary_updates:
+            return cls.load(store, path, max_sequence_length)
+        vocabulary = dict(cls.SPECIAL_TOKEN_IDS)
+        for token in sorted(store.word2vec.wv.key_to_index):
+            if token not in vocabulary:
+                vocabulary[token] = len(vocabulary)
+        tokenizer = cls(store, vocabulary, path, max_sequence_length)
+        tokenizer._write_vocabulary(vocabulary)
+        return tokenizer
+
+    @classmethod
+    def load(
+        cls,
+        store: EmbeddingStore,
+        vocabulary_path: Path,
+        max_sequence_length: int = 64,
+    ) -> Tokenizer:
+        """Read fixed IDs without creating artifacts or accessing a dataset."""
+        path = Path(vocabulary_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Vocabulary file does not exist: {path}")
+        if path.stat().st_size == 0:
+            raise ValueError(f"Vocabulary file is empty: {path}")
+        with path.open(mode="r", encoding="utf-8") as file:
+            vocabulary = json.load(file)
+        return cls(store, vocabulary, path, max_sequence_length)
+
+    def get_vector(self, vocabulary: dict[str, int]) -> torch.Tensor:
+        # Keep this call at Train construction time: it consumes torch RNG state.
+        return self.store.get_vector(vocabulary)
+
     def word_segmentation(self, text: str) -> list[str]:
         if not isinstance(text, str):
             raise TypeError("text must be a string")
         return list(cut(text.strip()))
 
-    def _build_vocabulary(self) -> dict[str, int]:
-        if self.vocabulary_path.is_file():
-            if self.vocabulary_path.stat().st_size == 0:
-                raise ValueError(
-                    f"Vocabulary file is empty: {self.vocabulary_path}"
-                )
-            vocabulary = self._read_vocabulary()
-        elif not self.allow_vocabulary_updates:
-            raise FileNotFoundError(
-                "Vocabulary updates are disabled but no vocabulary exists: "
-                f"{self.vocabulary_path}"
-            )
-        else:
-            vocabulary = dict(self.SPECIAL_TOKEN_IDS)
-
-        if self.allow_vocabulary_updates:
-            for token in sorted(self.word2vec.wv.key_to_index): # type: ignore
-                if token not in vocabulary:
-                    vocabulary[token] = len(vocabulary)
-
-        self.validate_vocabulary(vocabulary)
-        if self.allow_vocabulary_updates:
-            self._write_vocabulary(vocabulary)
-        return vocabulary
-
-    def validate_vocabulary(self, vocabulary: dict[str, int]) -> None:
+    @classmethod
+    def validate_vocabulary(cls, vocabulary: dict[str, int]) -> None:
         if not isinstance(vocabulary, dict) or not vocabulary:
             raise ValueError("Vocabulary must be a non-empty JSON object")
 
         for token, token_id in vocabulary.items():
             if not isinstance(token, str):
                 raise TypeError("Vocabulary tokens must be strings")
-            if not isinstance(token_id, int):
+            if isinstance(token_id, bool) or not isinstance(token_id, int):
                 raise TypeError(f"Vocabulary ID for {token!r} must be an integer")
 
-        for token, expected_id in self.SPECIAL_TOKEN_IDS.items():
+        for token, expected_id in cls.SPECIAL_TOKEN_IDS.items():
             actual_id = vocabulary.get(token)
             if actual_id != expected_id:
                 raise ValueError(
@@ -100,10 +112,6 @@ class Tokenizer(WordVec):
         token_ids = sorted(vocabulary.values())
         if token_ids != list(range(len(vocabulary))):
             raise ValueError("Vocabulary IDs must be unique and contiguous")
-
-    def _read_vocabulary(self) -> dict[str, int]:
-        with self.vocabulary_path.open(mode="r", encoding="utf-8") as file:
-            return json.load(file)
 
     def _write_vocabulary(self, vocabulary: dict[str, int]) -> None:
         self.vocabulary_path.parent.mkdir(parents=True, exist_ok=True)
