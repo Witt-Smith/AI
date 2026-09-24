@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from collections import Counter
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+import uuid
 
 import torch
 from gensim.models import Word2Vec
@@ -11,13 +13,15 @@ from gensim.models import Word2Vec
 if TYPE_CHECKING:
     from .data import DataSource
 
+LOGGER = logging.getLogger(__name__)
+
 
 class EmbeddingStore:
     """Hold a ready Word2Vec model; construction never starts training."""
 
     VECTOR_SIZE = 128
     MIN_COUNT = 2
-    EPOCHS = 1000
+    EPOCHS = 20
 
     def __init__(self, word2vec: Word2Vec, model_path: Path):
         self.word2vec = word2vec
@@ -31,11 +35,23 @@ class EmbeddingStore:
             raise ValueError("Word2Vec vocabulary is empty")
 
     @classmethod
-    def prepare(cls, provider: DataSource, path: Path) -> EmbeddingStore:
+    def prepare(
+        cls,
+        provider: DataSource,
+        path: Path,
+        max_vocabulary_size: int = 30_000,
+    ) -> EmbeddingStore:
         """Reuse an existing artifact or explicitly train and save a new one."""
         path = Path(path)
         if path.exists():
+            LOGGER.info("Reusing Word2Vec artifact: %s", path)
             return cls.load(path)
+        if (
+            isinstance(max_vocabulary_size, bool)
+            or not isinstance(max_vocabulary_size, int)
+            or max_vocabulary_size <= 0
+        ):
+            raise ValueError("max_vocabulary_size must be a positive integer")
         sentences = provider.load_word_data()
         token_counts = Counter(token for sentence in sentences for token in sentence)
         if not any(count >= cls.MIN_COUNT for count in token_counts.values()):
@@ -50,10 +66,19 @@ class EmbeddingStore:
             workers=1,
             alpha=0.002,
             epochs=cls.EPOCHS,
+            max_final_vocab=max_vocabulary_size,
         )
         store = cls(model, path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        model.save(str(path))
+        temporary_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            # Force one file so the atomic rename cannot detach numpy sidecars.
+            model.save(str(temporary_path), separately=[])
+            temporary_path.replace(path)
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink()
+        LOGGER.info("Saved Word2Vec artifact: %s (%d tokens)", path, len(model.wv))
         return store
 
     @classmethod
@@ -64,7 +89,9 @@ class EmbeddingStore:
             raise FileNotFoundError(f"Word2Vec artifact does not exist: {path}")
         if path.stat().st_size == 0:
             raise ValueError(f"Word2Vec artifact is empty: {path}")
-        return cls(Word2Vec.load(str(path)), path)
+        store = cls(Word2Vec.load(str(path)), path)
+        LOGGER.info("Loaded Word2Vec artifact: %s (%d tokens)", path, len(store.word2vec.wv))
+        return store
 
     def get_vector(self, vocabulary: dict[str, int]) -> torch.Tensor:
         for required_token in ("<PAD>", "<UNK>"):
@@ -89,4 +116,3 @@ class EmbeddingStore:
                     keyed_vectors[token].copy()
                 )
         return embedding_matrix
-

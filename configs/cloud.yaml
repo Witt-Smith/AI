@@ -1,21 +1,25 @@
-# 每个 output_dir 对应一套实验。云平台上请改成真正的持久化目录。
+# 一个 output_dir 只对应一套数据、词表和模型；续训不要改这些数据字段。
 output_dir: /persistent/ai-model/experiment-001
 
 data:
-  dataset_name: silver/lccc
+  dataset_name: /Users/wittsmith/Desktop/AI-MODEL/train_dateset.json
   dataset_config: base
+  # Hugging Face 的只读 Parquet 转换 commit；不执行数据仓库 Python 脚本。
+  dataset_revision: e7a8eb33d638990d430f4138ff280bb0c123ee97
   dialog_field: dialog
   max_dialogs: 10000
+  validation_dialogs: 1000
   max_sequence_length: 64
+  max_vocabulary_size: 30000
 
 train:
-  batch_size: 512
-  num_workers: 128
-  max_epochs: 1000
-  learning_rate: 0.02
+  batch_size: 32
+  num_workers: 4
+  max_epochs: 50
+  learning_rate: 0.002
   seed: 42
-  checkpoint_every_n_epochs: 10
-  log_every_n_steps: 100
+  checkpoint_every_n_epochs: 1
+  log_every_n_steps: 20
   gradient_clip_val: 1.0
   accelerator: auto
   devices: auto
@@ -26,4 +30,3 @@ chat:
   device: auto
   max_new_tokens: 50
   typing_delay: 0.05
-

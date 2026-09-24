@@ -1,0 +1,68 @@
+[
+  {
+    "id": 1,
+    "text": "这家店的服务很周到，下次还会再来。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 2,
+    "text": "收到礼物的时候特别开心，完全是我喜欢的风格。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 3,
+    "text": "这个软件用起来很顺手，帮我省了不少时间。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 4,
+    "text": "原本担心质量不好，实际收到后很满意。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 5,
+    "text": "虽然送货慢了一点，但东西确实很好，整体很满意。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 6,
+    "text": "这部电影没有让我失望，值得一看。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 7,
+    "text": "问题很快就解决了，客服的处理让我很满意。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 8,
+    "text": "这顿饭比预期好吃，尤其喜欢那道鱼。",
+    "label": 2,
+    "sentiment": "positive"
+  },
+  {
+    "id": 9,
+    "text": "刚买两天就坏了，质量实在让人失望。",
+    "label": 0,
+    "sentiment": "negative"
+  },
+  {
+    "id": 10,
+    "text": "等了一个小时还没上菜，体验太差了。",
+    "label": 0,
+    "sentiment": "negative"
+  },
+  {
+    "id": 11,
+    "text": "客服一直让我重复描述问题，却始终没有解决。",
+    "label": 0,
+    "sentiment": "negative"
+  }
+]

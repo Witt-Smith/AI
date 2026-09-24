@@ -1,5 +1,6 @@
 """Greedy response generation using an already loaded training model."""
 
+import logging
 from time import sleep
 
 import torch
@@ -10,6 +11,7 @@ from .training import Train
 GREEN = "\033[32m"
 BLUE = "\033[34m"
 RESET = "\033[0m"
+LOGGER = logging.getLogger(__name__)
 
 
 def resolve_device(requested_device: str) -> torch.device:
@@ -41,10 +43,16 @@ class ChatSession:
         max_new_tokens: int = 50,
     ) -> torch.Tensor:
         """Generate one response, feeding each predicted token back to the GRU."""
+        if not isinstance(question, str):
+            raise TypeError("question must be a string")
         if not question.strip():
             raise ValueError("question cannot be empty")
-        if max_new_tokens <= 0:
-            raise ValueError("max_new_tokens must be greater than 0")
+        if (
+            isinstance(max_new_tokens, bool)
+            or not isinstance(max_new_tokens, int)
+            or max_new_tokens <= 0
+        ):
+            raise ValueError("max_new_tokens must be a positive integer")
 
         self.model.eval()
         bos_id = self.tokenizer.bos_id
@@ -62,7 +70,7 @@ class ChatSession:
             dtype=torch.long,
             device=model_device,
         )
-        generated_ids = current_id
+        generated_ids = [current_id]
 
         with torch.inference_mode():
             question_embedding = self.model.embedding(question_ids)
@@ -74,16 +82,21 @@ class ChatSession:
                     decoder_embedding,
                     decoder_hidden,
                 )
-                next_id = self.model.linear(decoder_output[:, -1, :]).argmax(
+                token_logits = self.model.linear(decoder_output[:, -1, :])
+                # PAD is only a batch filler and BOS only starts decoding; neither
+                # is a valid newly generated token.
+                token_logits[:, self.tokenizer.pad_id] = -torch.inf
+                token_logits[:, self.tokenizer.bos_id] = -torch.inf
+                next_id = token_logits.argmax(
                     dim=-1,
                     keepdim=True,
                 )
-                generated_ids = torch.cat([generated_ids, next_id], dim=1)
+                generated_ids.append(next_id)
                 if next_id.item() == eos_id:
                     break
                 current_id = next_id
 
-        return generated_ids
+        return torch.cat(generated_ids, dim=1)
 
     def begin_chat(
         self,
@@ -91,6 +104,7 @@ class ChatSession:
         typing_delay: float = 0.05,
     ) -> None:
         self.model.eval()
+        LOGGER.info("Interactive chat started")
 
         while True:
             try:
@@ -107,11 +121,13 @@ class ChatSession:
                     max_new_tokens=max_new_tokens,
                 )
             except ValueError as error:
+                LOGGER.warning("Rejected invalid chat input: %s", error)
                 print(f"输入错误: {error}")
                 continue
 
             answer = self.tokenizer.decode(generated_ids[0])
             self.print_answer(answer, typing_delay)
+        LOGGER.info("Interactive chat ended")
 
     @staticmethod
     def print_answer(answer: str, typing_delay: float = 0.05) -> None:

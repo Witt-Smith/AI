@@ -1,4 +1,8 @@
-"""The original training computation, moved without changing the Train class."""
+"""Checkpoint-compatible GRU training and validation computation."""
+
+import math
+import logging
+from typing import cast
 
 import lightning as L
 import torch
@@ -6,6 +10,8 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence
 
 from .tokenizer import Tokenizer
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Train(L.LightningModule):
@@ -25,8 +31,13 @@ class Train(L.LightningModule):
             )
         if pad_id < 0 or pad_id >= vocab_size:
             raise ValueError("pad_id must be inside the vocabulary")
-        if learning_rate <= 0:
-            raise ValueError("learning_rate must be greater than 0")
+        if (
+            isinstance(learning_rate, bool)
+            or not isinstance(learning_rate, (int, float))
+            or not math.isfinite(learning_rate)
+            or learning_rate <= 0
+        ):
+            raise ValueError("learning_rate must be a finite positive number")
 
         self.save_hyperparameters(ignore=["tokenizer"])
         self.tokenizer = tokenizer
@@ -80,16 +91,13 @@ class Train(L.LightningModule):
         batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         batch_idx: int,
     ) -> torch.Tensor:
-        question_ids, answer_ids, question_lengths = batch
-        decoder_input_ids = answer_ids[:, :-1]
-        labels = answer_ids[:, 1:]
-
-        logits = self(question_ids, decoder_input_ids, question_lengths)
-        loss = self.loss_fn(
-            logits.reshape(-1, logits.size(-1)),
-            labels.reshape(-1),
+        loss = self._sequence_loss(batch)
+        question_ids = batch[0]
+        optimizer = cast(
+            torch.optim.Optimizer,
+            self.optimizers(use_pl_optimizer=False),
         )
-        learning_rate = self.optimizers().param_groups[0]["lr"] # type: ignore
+        learning_rate = optimizer.param_groups[0]["lr"]
 
         self.log_dict(
             {
@@ -104,8 +112,42 @@ class Train(L.LightningModule):
         )
         return loss
 
-    def configure_optimizers(self):
+    def validation_step(
+        self,
+        batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_idx: int,
+    ) -> torch.Tensor:
+        loss = self._sequence_loss(batch)
+        self.log(
+            "validation_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            batch_size=batch[0].size(0),
+        )
+        return loss
+
+    def _sequence_loss(
+        self,
+        batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    ) -> torch.Tensor:
+        question_ids, answer_ids, question_lengths = batch
+        decoder_input_ids = answer_ids[:, :-1]
+        labels = answer_ids[:, 1:]
+
+        logits = self(question_ids, decoder_input_ids, question_lengths)
+        return self.loss_fn(
+            logits.reshape(-1, logits.size(-1)),
+            labels.reshape(-1),
+        )
+
+    def configure_optimizers(self) -> torch.optim.Optimizer:
         return torch.optim.Adam(
             params=self.parameters(),
             lr=self.learning_rate,
         )
+
+    def on_train_epoch_end(self) -> None:
+        LOGGER.info("Training epoch finished: epoch=%d global_step=%d", self.current_epoch + 1, self.global_step)

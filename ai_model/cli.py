@@ -1,9 +1,14 @@
 """CLI owns parsing; runtime owns execution. Help never loads Torch or data."""
 import argparse
+import logging
 from pathlib import Path
 from typing import Optional
 
 from .config import load_config
+from .logging_config import configure_logging
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,9 +23,26 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--output-dir", type=Path, help="One persistent experiment directory")
         sub.add_argument("--max-sequence-length", type=int)
         if command == "train":
-            for flag in ("dataset-name", "dataset-config", "dialog-field", "accelerator", "precision", "max-time"):
+            for flag in (
+                "dataset-name",
+                "dataset-config",
+                "dataset-revision",
+                "dialog-field",
+                "accelerator",
+                "precision",
+                "max-time",
+            ):
                 sub.add_argument(f"--{flag}")
-            for flag in ("max-dialogs", "batch-size", "num-workers", "seed", "checkpoint-every-n-epochs", "log-every-n-steps"):
+            for flag in (
+                "max-dialogs",
+                "validation-dialogs",
+                "max-vocabulary-size",
+                "batch-size",
+                "num-workers",
+                "seed",
+                "checkpoint-every-n-epochs",
+                "log-every-n-steps",
+            ):
                 sub.add_argument(f"--{flag}", type=int)
             sub.add_argument("--devices", type=lambda value: int(value) if value.isdigit() else value)
             sub.add_argument("--learning-rate", type=float)
@@ -46,9 +68,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     config_path = args.pop("config", None)
     if args.pop("continuous", False):
         args["max_epochs"] = -1
-    data_fields = {"dataset_name", "dataset_config", "dialog_field", "max_dialogs", "max_sequence_length"}
+    data_fields = {
+        "dataset_name",
+        "dataset_config",
+        "dataset_revision",
+        "dialog_field",
+        "max_dialogs",
+        "validation_dialogs",
+        "max_sequence_length",
+        "max_vocabulary_size",
+    }
     overrides = {key if key == "output_dir" else f"{'data' if key in data_fields else command}.{key}": value
                  for key, value in args.items()}
+    configure_logging()
     try:
         config = load_config(command, config_path, overrides)
         from .runtime import run_chat, run_train
@@ -57,6 +89,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             run_chat(config)
     except (ValueError, TypeError, OSError) as error:
-        print(f"Error: {error}", file=__import__("sys").stderr)
+        LOGGER.error("Error: %s", error)
         return 2
+    except Exception:
+        LOGGER.exception("Unexpected application failure")
+        return 1
     return 0

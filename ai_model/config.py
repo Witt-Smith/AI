@@ -1,7 +1,7 @@
 """One source of defaults; YAML and explicit CLI values override it."""
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 import math
 import re
 
@@ -12,9 +12,12 @@ import yaml
 class DataConfig:
     dataset_name: str = "silver/lccc"
     dataset_config: Optional[str] = "base"
+    dataset_revision: Optional[str] = None
     dialog_field: str = "dialog"
     max_dialogs: int = 10_000
+    validation_dialogs: int = 0
     max_sequence_length: int = 64
+    max_vocabulary_size: int = 30_000
 
 
 @dataclass(frozen=True)
@@ -29,7 +32,23 @@ class TrainConfig:
     gradient_clip_val: float = 1.0
     accelerator: str = "auto"
     devices: Any = "auto"
-    precision: str = "32-true"
+    precision: Literal[
+        64,
+        32,
+        16,
+        "transformer-engine",
+        "transformer-engine-float16",
+        "16-true",
+        "16-mixed",
+        "bf16-true",
+        "bf16-mixed",
+        "32-true",
+        "64-true",
+        "64",
+        "32",
+        "16",
+        "bf16",
+    ] = "32-true"
     max_time: Optional[str] = None
     resume_from: Optional[Path] = None
     no_resume: bool = False
@@ -69,10 +88,16 @@ class AppConfig:
             raise ValueError("command must be train or chat")
         for key in ("dataset_name", "dialog_field"):
             _text(getattr(self.data, key), f"data.{key}")
-        if self.data.dataset_config is not None:
-            _text(self.data.dataset_config, "data.dataset_config")
+        for value, name in (
+            (self.data.dataset_config, "data.dataset_config"),
+            (self.data.dataset_revision, "data.dataset_revision"),
+        ):
+            if value is not None:
+                _text(value, name)
         _integer(self.data.max_dialogs, "data.max_dialogs", 1)
+        _integer(self.data.validation_dialogs, "data.validation_dialogs", 0)
         _integer(self.data.max_sequence_length, "data.max_sequence_length", 3)
+        _integer(self.data.max_vocabulary_size, "data.max_vocabulary_size", 1)
         for key in ("batch_size", "checkpoint_every_n_epochs", "log_every_n_steps"):
             _integer(getattr(self.train, key), f"train.{key}", 1)
         _integer(self.train.num_workers, "train.num_workers", 0)
@@ -90,10 +115,17 @@ class AppConfig:
                 raise ValueError(f"train.{key} must be a boolean")
         if self.train.no_resume and self.train.resume_from is not None:
             raise ValueError("resume_from and no_resume are mutually exclusive")
-        for value, name in ((self.train.accelerator, "train.accelerator"),
-                            (self.train.precision, "train.precision"),
-                            (self.chat.device, "chat.device")):
+        for value, name in (
+            (self.train.accelerator, "train.accelerator"),
+            (self.chat.device, "chat.device"),
+        ):
             _text(value, name)
+        if self.train.precision not in {
+            64, 32, 16, "transformer-engine", "transformer-engine-float16",
+            "16-true", "16-mixed", "bf16-true", "bf16-mixed", "32-true",
+            "64-true", "64", "32", "16", "bf16",
+        }:
+            raise ValueError("train.precision is not supported by Lightning")
         if self.train.devices != "auto":
             _integer(self.train.devices, "train.devices", 1)
         if self.train.max_time is not None:

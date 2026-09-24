@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Iterable, Union
+import uuid
 
 import torch
 from jieba import cut
 
 from .embeddings import EmbeddingStore
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Tokenizer:
@@ -62,6 +66,7 @@ class Tokenizer:
                 vocabulary[token] = len(vocabulary)
         tokenizer = cls(store, vocabulary, path, max_sequence_length)
         tokenizer._write_vocabulary(vocabulary)
+        LOGGER.info("Saved vocabulary: %s (%d tokens)", path, len(vocabulary))
         return tokenizer
 
     @classmethod
@@ -72,6 +77,7 @@ class Tokenizer:
         max_sequence_length: int = 64,
     ) -> Tokenizer:
         """Read fixed IDs without creating artifacts or accessing a dataset."""
+
         path = Path(vocabulary_path)
         if not path.is_file():
             raise FileNotFoundError(f"Vocabulary file does not exist: {path}")
@@ -79,7 +85,9 @@ class Tokenizer:
             raise ValueError(f"Vocabulary file is empty: {path}")
         with path.open(mode="r", encoding="utf-8") as file:
             vocabulary = json.load(file)
-        return cls(store, vocabulary, path, max_sequence_length)
+        tokenizer = cls(store, vocabulary, path, max_sequence_length)
+        LOGGER.info("Loaded vocabulary: %s (%d tokens)", path, len(vocabulary))
+        return tokenizer
 
     def get_vector(self, vocabulary: dict[str, int]) -> torch.Tensor:
         # Keep this call at Train construction time: it consumes torch RNG state.
@@ -109,18 +117,23 @@ class Tokenizer:
                     f"expected {expected_id}, got {actual_id}"
                 )
 
-        token_ids = sorted(vocabulary.values())
-        if token_ids != list(range(len(vocabulary))):
+        token_ids = set(vocabulary.values())
+        if token_ids != set(range(len(vocabulary))):
             raise ValueError("Vocabulary IDs must be unique and contiguous")
 
     def _write_vocabulary(self, vocabulary: dict[str, int]) -> None:
         self.vocabulary_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = self.vocabulary_path.with_suffix(
-            self.vocabulary_path.suffix + ".tmp"
+        temporary_path = self.vocabulary_path.with_name(
+            f".{self.vocabulary_path.name}.{uuid.uuid4().hex}.tmp"
         )
-        with temporary_path.open(mode="w", encoding="utf-8") as file:
-            json.dump(vocabulary, file, ensure_ascii=False)
-        temporary_path.replace(self.vocabulary_path)
+        try:
+            with temporary_path.open(mode="w", encoding="utf-8") as file:
+                json.dump(vocabulary, file, ensure_ascii=False)
+                file.flush()
+            temporary_path.replace(self.vocabulary_path)
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink()
 
     def get_ids(self, text: str) -> list[int]:
         token_to_id = self.token_to_id

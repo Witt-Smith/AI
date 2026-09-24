@@ -2,22 +2,25 @@
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
+from itertools import islice
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
+import warnings
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
 if TYPE_CHECKING:
-    from datasets import DatasetDict
     from .tokenizer import Tokenizer
 from jieba import cut
 
 
 DEFAULT_DIALOG_FIELD = "dialog"
 LOCAL_SPLITS = frozenset({"train", "validation", "test", "unknown"})
+LOGGER = logging.getLogger(__name__)
 
 
 class DataSource:
@@ -28,22 +31,26 @@ class DataSource:
         dataset: str,
         max_dialogs: int = 10_000,
         dataset_config: Optional[str] = None,
+        dataset_revision: Optional[str] = None,
         dialog_field: str = DEFAULT_DIALOG_FIELD,
     ):
         if not isinstance(dataset, str) or not dataset.strip():
             raise ValueError("dataset must be a non-empty string")
-        if max_dialogs <= 0:
+        if isinstance(max_dialogs, bool) or not isinstance(max_dialogs, int) or max_dialogs <= 0:
             raise ValueError("max_dialogs must be greater than 0")
-        if dataset_config is not None:
-            if not isinstance(dataset_config, str) or not dataset_config.strip():
-                raise ValueError("dataset_config must be a non-empty string")
+        for value, name in (
+            (dataset_config, "dataset_config"),
+            (dataset_revision, "dataset_revision"),
+        ):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} must be a non-empty string")
         if not isinstance(dialog_field, str) or not dialog_field.strip():
             raise ValueError("dialog_field must be a non-empty string")
 
         self.dataset = dataset
         self.dataset_config = dataset_config
+        self.dataset_revision = dataset_revision
         self.dialog_field = dialog_field
-        self._ds: Optional[DatasetDict] = None
         self.max_dialogs = max_dialogs
         self.dataset_path = self._resolve_dataset_path(self.dataset)
 
@@ -77,31 +84,44 @@ class DataSource:
     def is_local_dataset(self) -> bool:
         return self.dataset_path is not None
 
-    @property
-    def ds(self) -> DatasetDict:
+    @lru_cache(maxsize=8)
+    def _load_remote_split(self, split: str) -> Any:
+        """Open one split lazily so max_dialogs also bounds network and disk work."""
         if self.is_local_dataset:
             raise TypeError(
-                "A local chat dataset is not a Hugging Face DatasetDict. "
+                "A local chat dataset is not a Hugging Face dataset stream. "
                 "Use get_records() or get_pairs() instead."
             )
-        if self._ds is None:
-            # Remote dependencies and network access are only needed here.
-            from datasets import DatasetDict, load_dataset
 
-            if self.dataset_config is None:
-                loaded_dataset = load_dataset(self.dataset)
-            else:
-                loaded_dataset = load_dataset(
-                    self.dataset,
-                    self.dataset_config,
-                )
-            if not isinstance(loaded_dataset, DatasetDict):
-                raise TypeError(
-                    "Expected load_dataset() to return a DatasetDict, got "
-                    f"{type(loaded_dataset).__name__}"
-                )
-            self._ds = loaded_dataset
-        return self._ds
+        # Remote dependencies and network access are only needed here. Streaming
+        # is essential: silver/lccc base has millions of rows, while this project
+        # deliberately trains on a bounded prefix.
+        from datasets import load_dataset
+
+        configuration = self.dataset_config or "default"
+        revision = self.dataset_revision or "~parquet"
+        if self.dataset_revision is None:
+            warnings.warn(
+                "Remote Parquet revision is not pinned; record the current conversion "
+                "commit in data.dataset_revision for reproducible first-time training.",
+                UserWarning,
+            )
+        parquet_files = (
+            f"hf://datasets/{self.dataset}@{revision}/"
+            f"{configuration}/{split}/*.parquet"
+        )
+        try:
+            return load_dataset(
+                "parquet",
+                data_files={split: parquet_files},
+                split=split,
+                streaming=True,
+            )
+        except (FileNotFoundError, KeyError, ValueError) as error:
+            raise ValueError(
+                f"Cannot open Parquet split {split!r} from dataset "
+                f"{self.dataset!r} at revision {revision!r}: {error}"
+            ) from error
 
     @staticmethod
     def clean_turn(text: str) -> str:
@@ -229,26 +249,21 @@ class DataSource:
                 for record in records
             ]
 
-        dataset_dict = self.ds
-        if split not in dataset_dict:
-            raise ValueError(
-                f"Dataset {self.dataset!r} has no {split!r} split. "
-                f"Available splits: {list(dataset_dict.keys())}"
-            )
-        dataset_split = dataset_dict[split]
+        dataset_split = self._load_remote_split(split)
         dialog_field = self.dialog_field
-        if dialog_field not in dataset_split.column_names:
-            raise ValueError(
-                f"Dataset field {dialog_field!r} was not found. "
-                f"Available fields: {dataset_split.column_names}"
-            )
-
-        sample_count = min(self.max_dialogs, len(dataset_split))
         dialogs: list[list[str]] = []
 
-        for row_index, row in enumerate(
-            dataset_split.select(range(sample_count))
-        ):
+        for row_index, row in enumerate(islice(dataset_split, self.max_dialogs)):
+            if not isinstance(row, dict):
+                raise TypeError(
+                    f"{split}[{row_index}] must be an object, got "
+                    f"{type(row).__name__}"
+                )
+            if dialog_field not in row:
+                raise ValueError(
+                    f"Dataset field {dialog_field!r} was not found. "
+                    f"Available fields: {list(row)}"
+                )
             raw_turns = row[dialog_field]
             if not isinstance(raw_turns, list):
                 raise TypeError(
@@ -285,6 +300,7 @@ class DataSource:
                 raise ValueError(
                     f"No {split} pairs were found in the local dataset"
                 )
+            LOGGER.info("Loaded local %s split: %d dialogue pairs", split, len(pairs))
             return pairs
 
         pairs: list[tuple[str, str]] = []
@@ -297,6 +313,7 @@ class DataSource:
                 f"No adjacent dialog pairs were found in the {split} split"
             )
 
+        LOGGER.info("Loaded remote %s split: %d dialogue pairs", split, len(pairs))
         return pairs
 
     @lru_cache(maxsize=1)
@@ -320,13 +337,35 @@ class TrainingDataset(Dataset):
 
     def __init__(self, pairs: list[tuple[str, str]], tokenizer: Tokenizer):
         self.pad_id = tokenizer.pad_id
-        self.examples = [
-            (
-                torch.tensor(tokenizer.get_ids(question), dtype=torch.long),
-                torch.tensor(tokenizer.get_ids(answer), dtype=torch.long),
+        self.unk_id = tokenizer.unk_id
+        self.question_token_count = 0
+        self.question_unknown_count = 0
+        self.answer_token_count = 0
+        self.answer_unknown_count = 0
+        self.examples: list[tuple[torch.Tensor, torch.Tensor]] = []
+        for question, answer in pairs:
+            question_ids = tokenizer.get_ids(question)
+            answer_ids = tokenizer.get_ids(answer)
+            question_content = question_ids[1:-1]
+            answer_content = answer_ids[1:-1]
+            self.question_token_count += len(question_content)
+            self.question_unknown_count += question_content.count(self.unk_id)
+            self.answer_token_count += len(answer_content)
+            self.answer_unknown_count += answer_content.count(self.unk_id)
+            self.examples.append(
+                (
+                    torch.tensor(question_ids, dtype=torch.long),
+                    torch.tensor(answer_ids, dtype=torch.long),
+                )
             )
-            for question, answer in pairs
-        ]
+
+    @property
+    def question_unknown_ratio(self) -> float:
+        return self.question_unknown_count / max(self.question_token_count, 1)
+
+    @property
+    def answer_unknown_ratio(self) -> float:
+        return self.answer_unknown_count / max(self.answer_token_count, 1)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         return self.examples[index]
