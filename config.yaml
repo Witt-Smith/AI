@@ -1,0 +1,18 @@
+data:
+  source: !!str local
+  source_path: !!str /Users/wittsmith/Desktop/AI/TrainDataSet/test.json
+  batch_size: !!int 50
+  shuffle: !!bool True
+  sampler: 
+  # mutually exclusive shuffle smapler batch_size and drop_last
+  batch_sampler:
+  num_workes: !!int 1
+  collate_fn:
+  pin_menory: !!bool True
+  timeout: !!int 120
+
+train:
+  pad_idx: !!int 0
+
+mudel:
+  mode: !!str 'train'

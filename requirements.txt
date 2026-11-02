@@ -1,6 +1,0 @@
-torch==2.8.0
-lightning==2.6.0
-datasets==3.6.0
-gensim==4.4.0
-jieba==0.42.1
-PyYAML==6.0.3
