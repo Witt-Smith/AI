@@ -6,13 +6,25 @@ data:
   sampler: 
   # mutually exclusive shuffle smapler batch_size and drop_last
   batch_sampler:
-  num_workes: !!int 1
+  num_workers: !!int 1
   collate_fn:
-  pin_menory: !!bool True
+  pin_memory: !!bool True
   timeout: !!int 120
 
 train:
-  pad_idx: !!int 0
+  eps: !!float 1e-5
+  embedding_dim: !!int 256
+  hidden_size: !!int 512
 
-mudel:
+model:
   mode: !!str 'train'
+
+tokenization:
+  pad_idx: !!int 0
+  eos_idx: !!int 1
+  bos_idx: !!int 2
+  sep_idx: !!int 3
+  unk_idx: !!int 4
+
+  
+

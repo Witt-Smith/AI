@@ -2,31 +2,45 @@ from collections.abc import Sequence
 from datasets import DatasetDict
 from torch import Tensor, long, tensor
 import tiktoken
+from Config.ai_config import config
 
 class Tokenizer:
-    PAD_ID = 0
-    BOS_ID = 1
-    EOS_ID = 2
-    UNK_ID = 3
-    SPECIAL_TOKEN_COUNT = 4
+    SPECIAL_TOKEN_COUNT = 5
 
     def __init__(self) -> None:
         super().__init__()
         self.token_tale: dict[str, int] = {}
-        self.ens = tiktoken.get_encoding("o200k_base")
+        self.ens = tiktoken.get_encoding("cl100k_base")
+        self.tokenization_cnf = config.tokenization_cnf
+        self.pad = self.tokenization_cnf['pad_idx']
+        self.eos = self.tokenization_cnf['eos_idx']
+        self.bos = self.tokenization_cnf['bos_idx']
+        self.sep = self.tokenization_cnf['sep_idx']
+        self.unk = self.tokenization_cnf['unk_idx']
 
     def __len__(self) -> int:
+        ''' Return the vocabluary size. '''
+
         return self.SPECIAL_TOKEN_COUNT + len(self.token_tale)
 
     def assign_id(self, data: DatasetDict) -> None:
+        ''' Assign Token id. '''
+
         token_tale: dict[str, int] = {}
         for split in data.values():
             for sample in split:
                 for field in ("feature", "label"):
-                    text = sample[field]
-                    texts = self.cut(text)
+                    text = sample[field] # type: ignore
 
-                    if not isinstance(text, (str, Sequence)):
+                    if isinstance(text, str):
+                        texts = self.cut(text)
+                    elif isinstance(text, Sequence):
+                        if not all(isinstance(token, str) for token in text):
+                            raise TypeError(
+                                f"Expected '{field}' tokens to be strings."
+                            )
+                        texts = text
+                    else:
                         raise TypeError(
                             f"Expected '{field}' to be text or a sequence of tokens, "
                             f"got {type(text).__name__}"
@@ -52,16 +66,16 @@ class Tokenizer:
         else:
             return result
 
-
-
-    def encode(self, text: Sequence[str]) -> Tensor:
+    def encode(self,*sequence) -> Tensor:
         if not self.token_tale:
             raise ValueError("Token table is empty.")
 
-        ids = [self.BOS_ID]
-        ids.extend(self.token_tale.get(token, self.UNK_ID) for token in text)
-        ids.append(self.EOS_ID)
-
+        ids = [self.bos]
+        ids.extend(self.token_tale.get(token, self.unk) for token in sequence[0])
+        ids.append(self.sep)
+        ids.extend(self.token_tale.get(token, self.unk) for token in sequence[1])
+        ids.append(self.eos)
+        
         return tensor(ids, dtype=long)
 
     def decode(self, text: list[str]):

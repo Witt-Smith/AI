@@ -4,30 +4,27 @@ from torch.utils.data.dataset import Dataset
 from Tokenizer.tokenizer import Tokenizer
 from datasets import DatasetDict
 from datasets import load_dataset
-from omegaconf import DictConfig, OmegaConf
+from Config.ai_config import config
 from torch.nn.utils.rnn import pad_sequence
 from datasets import Dataset as HFDataset
 
-
 class DataSet():
-    PATH_YAML = Path(__file__).resolve().parent.parent / 'config.yaml'
-
+    
     def __init__(self, tokenizer: Tokenizer) -> None:
         super().__init__()
-        self.cnf = OmegaConf.load(self.PATH_YAML)
-
-        if not isinstance(self.cnf, DictConfig):
-            raise TypeError(f"Expected DictConfig, got {type(self.cnf)}")
-
-        self.data_cnf = self.cnf["data"]
+        self.data_cnf = config.data_cnf
+        self.tokenization_cnf = config.tokenization_cnf
         self.tokenizer = tokenizer
         self.source = self.data_cnf["source"]
         self.source_path = Path(self.data_cnf["source_path"]).expanduser()
         self.ds = self.loading_data()
+        self.pad = self.tokenization_cnf['pad_idx']
+        self.eos = self.tokenization_cnf['eos_idx']
+        self.bos = self.tokenization_cnf['bos_idx']
 
-        self.train_dataset = TrainDataset(self.ds['train'], tokenizer) 
-        self.valid_dataset = ValidDataset(self.ds['validation'], tokenizer)
-        self.test_dataset = TestDataset(self.ds['test'], tokenizer) 
+        self.train_dataset = TrainDataset(self.ds['train'], self.tokenizer,self.pad,self.eos,self.bos) 
+        self.valid_dataset = ValidDataset(self.ds['validation'], self.tokenizer,self.pad,self.eos,self.bos)
+        self.test_dataset = TestDataset(self.ds['test'], self.tokenizer,self.pad,self.eos,self.bos) 
 
     def loading_data(self) -> DatasetDict:
         if self.source == "local":
@@ -66,30 +63,32 @@ class DataSet():
         })
     
     def collate_batch(self, batch):
-            features, labels = zip(*batch)
-            features = pad_sequence(
-                list(features), batch_first=True, padding_value=self.tokenizer.PAD_ID
-            )
-            labels = pad_sequence(
-                list(labels), batch_first=True, padding_value=self.tokenizer.PAD_ID
-            )
-    
-            return features, labels
+        features, labels, categories = zip(*batch)
+        features = pad_sequence(
+            list(features), batch_first=True, padding_value=self.pad
+        )
+        labels = pad_sequence(
+            list(labels), batch_first=True, padding_value=self.pad
+        )
+
+        return features, labels, categories
 
 
 class TrainDataset(Dataset):
 
-    def __init__(self, ds: HFDataset, tokenizer: Tokenizer) -> None:
+    def __init__(self, ds: HFDataset, tokenizer: Tokenizer,pad_idx: int,eos_idx: int,bos_idx: int) -> None:
         super().__init__()
         self.tokenizer = tokenizer
         self.samples = ds
+        self.pad = pad_idx
+        self.eos = eos_idx
+        self.bos = bos_idx
 
     def __getitem__(self, index: int):
         sample = self.samples[index]
-        features = self.tokenizer.encode(sample["feature"])
-        labels = self.tokenizer.encode(sample["label"])
+        sequence = self.tokenizer.encode(sample["feature"],sample["label"])
 
-        return features, labels
+        return sequence, sample["category"]
 
     def __len__(self) -> int:
 
@@ -99,17 +98,18 @@ class TrainDataset(Dataset):
 
 class ValidDataset(Dataset):
 
-    def __init__(self, ds: HFDataset, tokenizer: Tokenizer) -> None:
+    def __init__(self, ds: HFDataset, tokenizer: Tokenizer,pad_idx: int,eos_idx: int,bos_idx: int) -> None:
         super().__init__()
         self.tokenizer = tokenizer
         self.samples = ds
+        self.bos = bos_idx
 
     def __getitem__(self, index: int):
         sample = self.samples[index]
         features = self.tokenizer.encode(sample["feature"])
         labels = self.tokenizer.encode(sample["label"])
 
-        return features, labels
+        return features, labels, sample["category"]
 
     def __len__(self) -> int:
 
@@ -119,17 +119,18 @@ class ValidDataset(Dataset):
 
 class TestDataset(Dataset):
 
-    def __init__(self, ds: HFDataset, tokenizer: Tokenizer) -> None:
+    def __init__(self, ds: HFDataset, tokenizer: Tokenizer,pad_idx: int,eos_idx: int,bos_idx: int) -> None:
         super().__init__()
         self.tokenizer = tokenizer
         self.samples = ds
+        self.bos = bos_idx
 
     def __getitem__(self, index: int):
         sample = self.samples[index]
         features = self.tokenizer.encode(sample["feature"])
         labels = self.tokenizer.encode(sample["label"])
 
-        return features, labels
+        return features, labels, sample["category"]
 
     def __len__(self) -> int:
 

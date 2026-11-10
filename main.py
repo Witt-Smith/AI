@@ -6,6 +6,7 @@ from Model.network import NeuralNetwork
 
 
 
+
 if __name__ == "__main__":
     
     tokenizer = Tokenizer()
@@ -21,3 +22,4 @@ if __name__ == "__main__":
         network,
         train_dataloaders=dataloader.train_loader
     )
+    

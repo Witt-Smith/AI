@@ -1,20 +1,17 @@
 from torch.utils.data import DataLoader
-from omegaconf import DictConfig
 from Data.dataset import DataSet
-
+from Config.ai_config import config
 
 class DataLoad(DataSet):
     def __init__(self, tokenizer):
         super().__init__(tokenizer)
-        if not isinstance(self.cnf, DictConfig):
-            raise TypeError(f"Expected DictConfig, got {type(self.cnf)}")
-
-        self.data_cnf = self.cnf["data"]
+        self.data_cnf = config.data_cnf
+        
         self.batch_size = self.data_cnf["batch_size"]
         self.shuffle = self.data_cnf["shuffle"]
-        self.num_workers = self.data_cnf["num_workes"]
+        self.num_workers = self.data_cnf["num_workers"]
         self.timeout = self.data_cnf["timeout"]
-        self.pin_memory = self.data_cnf["pin_menory"]
+        self.pin_memory = self.data_cnf["pin_memory"]
 
         self.train_loader = DataLoader(
             self.train_dataset,
