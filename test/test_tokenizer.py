@@ -23,9 +23,19 @@ def test_participle():
             "validation": splits.get("validation", []),
             "test": splits.get("test", []),
         })
-    tokenizer.assign_id(data)
+    tokenizer.assign_ids(data)
 
     assert len(tokenizer.token_tale) == 0,'Writen Errror!!!'
+
+
+def test_cut_handles_multibyte_utf8_tokens():
+    text = "你好，世界！🙂"
+
+    tokens = tokenizer.cut(text)
+
+    assert tokens
+    assert "".join(tokens) == text
+
 
 def test_forward():
     matrix = arange(3600,dtype=float).reshape(5,5,144)

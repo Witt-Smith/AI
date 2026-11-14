@@ -1,7 +1,7 @@
 data:
   source: !!str local
   source_path: !!str /Users/wittsmith/Desktop/AI/TrainDataSet/test.json
-  batch_size: !!int 50
+  batch_size: !!int 100
   shuffle: !!bool True
   sampler: 
   # mutually exclusive shuffle smapler batch_size and drop_last

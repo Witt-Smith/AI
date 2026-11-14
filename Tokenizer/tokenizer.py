@@ -23,10 +23,9 @@ class Tokenizer:
 
         return self.SPECIAL_TOKEN_COUNT + len(self.token_tale)
 
-    def assign_id(self, data: DatasetDict) -> None:
+    def assign_ids(self, data: DatasetDict) -> list[str]:
         ''' Assign Token id. '''
 
-        token_tale: dict[str, int] = {}
         for split in data.values():
             for sample in split:
                 for field in ("feature", "label"):
@@ -34,6 +33,7 @@ class Tokenizer:
 
                     if isinstance(text, str):
                         texts = self.cut(text)
+
                     elif isinstance(text, Sequence):
                         if not all(isinstance(token, str) for token in text):
                             raise TypeError(
@@ -46,10 +46,10 @@ class Tokenizer:
                             f"got {type(text).__name__}"
                         )
                     for token in texts:
-                        if token not in token_tale:
-                            token_tale[token] = self.SPECIAL_TOKEN_COUNT + len(token_tale)
+                        if token not in self.token_tale:
+                            self.token_tale[token] = self.SPECIAL_TOKEN_COUNT + len(self.token_tale)
 
-        self.token_tale = token_tale
+        return sorted(self.token_tale, key=self.token_tale.__getitem__)
 
     def cut(self,text: str)-> list[str]:
         ids = self.ens.encode(text)
@@ -59,25 +59,41 @@ class Tokenizer:
         for token in parts:
             buffer += token
             try:
-                result.append(buffer.decode('utf-8'))
-                buffer = b''
-            except UnicodeDecodeError as e:
-                raise ValueError(f"Unicode Decoder Error {e}")
-        else:
-            return result
+                decoded = buffer.decode('utf-8')
+            except UnicodeDecodeError as error:
+                if error.reason == "unexpected end of data" and error.end == len(buffer):
+                    continue
+                raise ValueError(f"Unicode Decoder Error {error}") from error
+
+            result.append(decoded)
+            buffer = b''
+
+        if buffer:
+            raise ValueError("Unicode Decoder Error: incomplete UTF-8 sequence.")
+
+        return result
 
     def encode(self,*sequence) -> Tensor:
         if not self.token_tale:
             raise ValueError("Token table is empty.")
 
         ids = [self.bos]
-        ids.extend(self.token_tale.get(token, self.unk) for token in sequence[0])
+        ids.extend(self.token_tale.get(token, self.unk)  for token in self.cut(sequence[0]))
         ids.append(self.sep)
-        ids.extend(self.token_tale.get(token, self.unk) for token in sequence[1])
+        ids.extend(self.token_tale.get(token, self.unk)  for token in self.cut(sequence[1]))
         ids.append(self.eos)
-        
+
         return tensor(ids, dtype=long)
 
-    def decode(self, text: list[str]):
-        pass
-        
+    def decode(self, token_ids: Sequence[int]) -> str:
+        id_to_token = {index: token for token, index in self.token_tale.items()}
+        id_to_token.update(
+            {
+                self.pad: "<PAD>",
+                self.eos: "<EOS>",
+                self.bos: "<BOS>",
+                self.sep: "<SEP>",
+                self.unk: "<UNK>",
+            }
+        )
+        return "".join(id_to_token[int(index)] for index in token_ids)

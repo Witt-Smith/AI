@@ -1,10 +1,9 @@
-
 import torch.nn as nn
-
+from torch import Tensor
 
 class TranormerBlock(nn.Module):
 
-    
+
     def __init__(self, embedding_dim: int, num_heads: int, eps: float) -> None:
         super().__init__()
         self.normal_layer = nn.LayerNorm(
@@ -24,10 +23,10 @@ class TranormerBlock(nn.Module):
             nn.Linear(256, embedding_dim)
         )
 
-    def forward(self, input_embedding, padding_mask=None):
-        resdual = input_embedding
+    def forward(self, input_embedding: Tensor, padding_mask=None):
+        residual = input_embedding
         normalized_output = self.normal_layer(input_embedding)
-        attention_output, attention_weights = self.attention(
+        attention_output,_ = self.attention(
             query=normalized_output,
             key=normalized_output,
             value=normalized_output,
@@ -35,4 +34,4 @@ class TranormerBlock(nn.Module):
             need_weights=False,
         )
 
-        return self.network(attention_output + resdual)
+        return self.network(attention_output) + residual

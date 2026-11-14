@@ -6,7 +6,6 @@ class DataLoad(DataSet):
     def __init__(self, tokenizer):
         super().__init__(tokenizer)
         self.data_cnf = config.data_cnf
-        
         self.batch_size = self.data_cnf["batch_size"]
         self.shuffle = self.data_cnf["shuffle"]
         self.num_workers = self.data_cnf["num_workers"]

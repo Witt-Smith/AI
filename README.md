@@ -30,3 +30,15 @@
   }
 }
 ```
+
+## 测试聊天
+
+在项目根目录运行 `python -m chat`，输入问题后按回车，输入 `/exit` 退出。程序按修改时间加载 `lightning_logs/` 下最新的 `.ckpt`。这份检查点需要原训练数据及其顺序来还原词表。
+
+```sh
+conda activate AI
+python -m chat
+python -m chat --prompt "你是谁？" --max-new-tokens 8
+```
+
+可以用 `--checkpoint 路径` 指定权重。每次提问都从该问题开始，逐步选择得分最高的 token，遇到 EOS 或长度上限时结束。

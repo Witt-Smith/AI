@@ -4,14 +4,15 @@ from torch.utils.data.dataset import Dataset
 from Tokenizer.tokenizer import Tokenizer
 from datasets import DatasetDict
 from datasets import load_dataset
-from Config.ai_config import config
 from torch.nn.utils.rnn import pad_sequence
 from datasets import Dataset as HFDataset
+from Config.ai_config import config
+from torch import long, tensor
 
 class DataSet():
-    
     def __init__(self, tokenizer: Tokenizer) -> None:
         super().__init__()
+        self.cnf = config.config
         self.data_cnf = config.data_cnf
         self.tokenization_cnf = config.tokenization_cnf
         self.tokenizer = tokenizer
@@ -63,15 +64,27 @@ class DataSet():
         })
     
     def collate_batch(self, batch):
-        features, labels, categories = zip(*batch)
-        features = pad_sequence(
-            list(features), batch_first=True, padding_value=self.pad
-        )
-        labels = pad_sequence(
-            list(labels), batch_first=True, padding_value=self.pad
-        )
+        if len(batch[0]) == 2:
+            sequences, categories = zip(*batch)
+            features = [sequence[:-1] for sequence in sequences]
+            labels = [sequence[1:] for sequence in sequences]
+        else:
+            feature_sequences, label_sequences, categories = zip(*batch)
+            features = feature_sequences
+            labels = label_sequences
 
-        return features, labels, categories
+        category_ids = {
+            "identity": 0,
+            "ability": 1,
+        }
+        intents = tensor(
+            [category_ids.get(category, 2) for category in categories],
+            dtype=long,
+        )
+        features = pad_sequence(list(features), batch_first=True, padding_value=self.pad)
+        labels = pad_sequence(list(labels), batch_first=True, padding_value=self.pad)
+
+        return features, labels, intents
 
 
 class TrainDataset(Dataset):

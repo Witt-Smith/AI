@@ -11,7 +11,7 @@ from torch import Tensor
 class NeuralNetwork(pl.LightningModule):
     intent_to_id = {
         "identity": 0,   # 询问身份
-        "ability": 1,    # 询问能力
+        "abiliPty": 1,    # 询问能力
         "unknown": 2,    # 数据集范围以外
     }
     def __init__(self, vocab_size: int) -> None:
@@ -25,7 +25,7 @@ class NeuralNetwork(pl.LightningModule):
         self.eps = self.train_cnf['eps']
         self.embedding_dim = self.train_cnf['embedding_dim']
         self.hidden_size = self.train_cnf['hidden_size']
-        self.max_seq_len = 512
+        # self.max_seq_len = 512
 
         if not 0 <= self.pad < vocab_size:
             raise ValueError(f"pad_idx {self.pad} is outside the vocabulary.")
@@ -36,7 +36,7 @@ class NeuralNetwork(pl.LightningModule):
             padding_idx=self.pad,
         )
         self.position_embedding = nn.Embedding(
-            num_embeddings=self.max_seq_len,
+            num_embeddings=self.embedding_dim,
             embedding_dim=self.embedding_dim,
             padding_idx=self.pad,
         )
@@ -45,7 +45,7 @@ class NeuralNetwork(pl.LightningModule):
         self.intent_loss_fn = nn.CrossEntropyLoss()
         self.transformer_block = nn.ModuleList([
             TranormerBlock(self.embedding_dim, 4, self.eps)
-            for _ in range(50)
+            for _ in range(5)
         ])
         self.lmh = nn.Linear(self.embedding_dim,vocab_size)
         self.intent_head = nn.Linear(
@@ -53,7 +53,7 @@ class NeuralNetwork(pl.LightningModule):
             len(self.intent_to_id)
         )
                 
-    def forward(self, features, labels):
+    def forward(self, features):
         position_features = torch.arange(features.size(1), device=features.device)
         input_embedding = self.token_embedding(features) + self.position_embedding(position_features)
 
@@ -61,10 +61,12 @@ class NeuralNetwork(pl.LightningModule):
         eosing_mask = features.eq(self.eos)
         sep_mask = features.eq(self.sep)
         sep_positions = sep_mask.long().argmax(dim=1)
+
         matrix = input_embedding
         for block in self.transformer_block:
             matrix = block(matrix, pad_mask)
         logits = self.lmh(matrix)
+
         valid_mask = features.ne(self.pad)
         pooled = self.polling(matrix, valid_mask)
         intent = self.intent_head(pooled)
@@ -85,9 +87,8 @@ class NeuralNetwork(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         features, labels, intent_labels = batch
-        logits,intent = self(features, labels)
-        targets = labels[:, 1:]
-        loss = self.loss_fn(logits.reshape(-1, self.vocab_size), targets.reshape(-1))
+        logits,intent = self(features)
+        loss = self.loss_fn(logits.reshape(-1, self.vocab_size), labels.reshape(-1))
         intent_loss = self.intent_loss_fn(intent,intent_labels)
         total_loss = loss + intent_loss 
 
