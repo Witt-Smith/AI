@@ -17,7 +17,7 @@ class DataSet():
         self.tokenization_cnf = config.tokenization_cnf
         self.tokenizer = tokenizer
         self.source = self.data_cnf["source"]
-        self.source_path = Path(self.data_cnf["source_path"]).expanduser()
+        self.source_path = Path(__file__).parents[1] / Path(self.data_cnf["source_path"]).expanduser()
         self.ds = self.loading_data()
         self.pad = self.tokenization_cnf['pad_idx']
         self.eos = self.tokenization_cnf['eos_idx']

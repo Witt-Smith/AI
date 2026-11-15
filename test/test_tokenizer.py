@@ -1,6 +1,7 @@
 from Tokenizer.tokenizer import Tokenizer
 from datasets import DatasetDict
 from json import load
+from pathlib import Path
 from Tokenizer.tokenizer import Tokenizer
 from Model.MultiHeadAttention import MultiHeadAttention
 from torch import float
@@ -13,7 +14,7 @@ mlt_head_aten = MultiHeadAttention(144,12)
 
 
 def test_participle():
-    PATH = r'/Users/wittsmith/Desktop/AI/TrainDataSet/test.json'
+    PATH = Path(__file__).parents[1] / 'TrainDataSet/test.json'
     with open(PATH,mode="r",encoding="utf-8") as f:
         splits = load(f)
         if not isinstance(splits, dict):

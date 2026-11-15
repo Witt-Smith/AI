@@ -1,12 +1,12 @@
 data:
   source: !!str local
-  source_path: !!str /Users/wittsmith/Desktop/AI/TrainDataSet/test.json
-  batch_size: !!int 100
+  source_path: !!str TrainDataSet/test.json
+  batch_size: !!int 512
   shuffle: !!bool True
   sampler: 
   # mutually exclusive shuffle smapler batch_size and drop_last
   batch_sampler:
-  num_workers: !!int 1
+  num_workers: !!int 1024
   collate_fn:
   pin_memory: !!bool True
   timeout: !!int 120
