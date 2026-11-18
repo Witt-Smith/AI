@@ -7,8 +7,9 @@ if __name__ == "__main__":
 
     tokenizer = Tokenizer()
     dataloader = DataLoad(tokenizer)
-    tokenizer.assign_ids(dataloader.ds) # type: ignore
-    network = NeuralNetwork(len(tokenizer))
+    vocabulary = tokenizer.assign_ids({"train": dataloader.train_dataset.samples})
+    network = NeuralNetwork(len(tokenizer), intent_names=list(dataloader.intent_to_id),
+                            vocabulary=vocabulary)
     trainer = pl.Trainer(
         max_epochs = 50,
         accelerator='auto',
@@ -16,6 +17,8 @@ if __name__ == "__main__":
     )
     trainer.fit(
         network,
-        train_dataloaders=dataloader.train_loader
+        train_dataloaders=dataloader.train_loader,
+        val_dataloaders=dataloader.valid_loader if len(dataloader.valid_dataset) else None,
     )
-    
+    if len(dataloader.test_dataset):
+        trainer.test(network, dataloaders=dataloader.test_loader)

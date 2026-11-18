@@ -1,8 +1,10 @@
-FROM python:3.11.18-alpine3.23
+FROM python:3.11-slim
 
-WORKDIR ./container_ai
+WORKDIR /container_ai
 
 COPY . .
-RUN pip3 install --no-cache-dir -r requirements.txt -i  http://mirrors.aliyun.com/pypi/simple/
 
-CMD ["python3", "main.py"]doc
+
+RUN pip3 install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+
+CMD ["python3", "main.py"]

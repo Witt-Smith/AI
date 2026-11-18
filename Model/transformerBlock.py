@@ -23,7 +23,7 @@ class TranormerBlock(nn.Module):
             nn.Linear(256, embedding_dim)
         )
 
-    def forward(self, input_embedding: Tensor, padding_mask=None):
+    def forward(self, input_embedding: Tensor, padding_mask=None, causal_mask=None):
         residual = input_embedding
         normalized_output = self.normal_layer(input_embedding)
         attention_output,_ = self.attention(
@@ -31,6 +31,7 @@ class TranormerBlock(nn.Module):
             key=normalized_output,
             value=normalized_output,
             key_padding_mask=padding_mask,
+            attn_mask=causal_mask,
             need_weights=False,
         )
 

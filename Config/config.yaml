@@ -6,10 +6,10 @@ data:
   sampler: 
   # mutually exclusive shuffle smapler batch_size and drop_last
   batch_sampler:
-  num_workers: !!int 1024
+  num_workers: !!int 0
   collate_fn:
   pin_memory: !!bool True
-  timeout: !!int 120
+  timeout: !!int 0
 
 train:
   eps: !!float 1e-5

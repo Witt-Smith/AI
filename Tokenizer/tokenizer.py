@@ -1,5 +1,4 @@
-from collections.abc import Sequence
-from datasets import DatasetDict
+from collections.abc import Iterable, Mapping, Sequence
 from torch import Tensor, long, tensor
 import tiktoken
 from Config.ai_config import config
@@ -23,7 +22,7 @@ class Tokenizer:
 
         return self.SPECIAL_TOKEN_COUNT + len(self.token_tale)
 
-    def assign_ids(self, data: DatasetDict) -> list[str]:
+    def assign_ids(self, data: Mapping[str, Iterable]) -> list[str]:
         ''' Assign Token id. '''
 
         for split in data.values():
@@ -73,14 +72,14 @@ class Tokenizer:
 
         return result
 
-    def encode(self,*sequence) -> Tensor:
+    def encode(self, question: str, answer: str) -> Tensor:
         if not self.token_tale:
             raise ValueError("Token table is empty.")
 
         ids = [self.bos]
-        ids.extend(self.token_tale.get(token, self.unk)  for token in self.cut(sequence[0]))
+        ids.extend(self.token_tale.get(token, self.unk)  for token in self.cut(question))
         ids.append(self.sep)
-        ids.extend(self.token_tale.get(token, self.unk)  for token in self.cut(sequence[1]))
+        ids.extend(self.token_tale.get(token, self.unk)  for token in self.cut(answer))
         ids.append(self.eos)
 
         return tensor(ids, dtype=long)
