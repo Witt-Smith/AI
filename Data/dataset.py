@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from json import load
 from pathlib import Path
 from random import Random
@@ -10,14 +12,18 @@ from Config.ai_config import config
 from torch import long, tensor
 
 class DataSet():
-    def __init__(self, tokenizer: Tokenizer) -> None:
+    def __init__(self, tokenizer: Tokenizer, *, source_path: Path | None = None) -> None:
         super().__init__()
         self.cnf = config.config
         self.data_cnf = config.data_cnf
         self.tokenization_cnf = config.tokenization_cnf
         self.tokenizer = tokenizer
-        self.source = self.data_cnf["source"]
-        self.source_path = Path(__file__).parents[1] / Path(self.data_cnf["source_path"]).expanduser()
+        if source_path is None:
+            self.source = self.data_cnf["source"]
+            self.source_path = Path(__file__).parents[1] / Path(self.data_cnf["source_path"]).expanduser()
+        else:
+            self.source = "local"
+            self.source_path = source_path.expanduser()
         self.ds = self.loading_data()
         self.pad = self.tokenization_cnf['pad_idx']
         self.sep = self.tokenization_cnf['sep_idx']
